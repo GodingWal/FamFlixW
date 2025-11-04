@@ -170,7 +170,7 @@ def chatterbox_tts(
         text,
         "--out",
         str(output_path),
-        "--audio-prompt",
+        "--speaker-wav",
         str(audio_prompt),
         "--device",
         device,

@@ -90,7 +90,7 @@ def main(argv: list[str] | None = None) -> int:
             out_dir = args.out.parent
             out_dir.mkdir(parents=True, exist_ok=True)
             norm_path = out_dir / "prompt_normalized.wav"
-            ta.save(str(norm_path), wav_in, sr_in)
+            ta.save(str(norm_path), wav_in, sr_in, format="wav")
             normalized_prompt_path = str(norm_path)
             prompt_wav, prompt_sr = wav_in, sr_in
         except Exception:

@@ -52,12 +52,7 @@ export class VoiceService {
       let workingBuffer = audioBuffer;
       // Properly decode non-WAV uploads (e.g., MP3/OGG/M4A) using ffmpeg; do NOT wrap raw bytes
       if (!this.isWavBuffer(workingBuffer)) {
-        try {
-          workingBuffer = await this.decodeAudioToWav(workingBuffer, 24000, 1, 16);
-        } catch (e) {
-          console.error('FFmpeg decode failed; falling back to raw WAV wrapper (may cause noise):', e);
-          workingBuffer = this.wrapRawAudioAsWav(workingBuffer);
-        }
+        workingBuffer = await this.decodeAudioToWav(workingBuffer, 24000, 1, 16);
       }
 
       let audioInfo = await this.analyzeAudioBuffer(workingBuffer);
@@ -124,7 +119,7 @@ export class VoiceService {
           // Use a separate buffer for analysis so we never mutate the original recording bytes
           let analysisBuffer = originalBuffer;
           if (!this.isWavBuffer(analysisBuffer)) {
-            analysisBuffer = this.wrapRawAudioAsWav(analysisBuffer);
+            analysisBuffer = await this.decodeAudioToWav(analysisBuffer).catch(() => Buffer.alloc(0));
           }
           if (duration === undefined) {
             const info = await this.analyzeAudioBuffer(analysisBuffer);

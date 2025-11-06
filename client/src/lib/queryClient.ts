@@ -160,7 +160,9 @@ export const getQueryFn: <T>(options: {
       let errorData: any = undefined;
       try {
         errorData = await res.clone().json();
-      } catch {}
+      } catch {
+        // ignore JSON parsing errors if body is empty
+      }
       const message = String(errorData?.error || errorData?.message || "");
       const shouldRefresh =
         res.status === 401 || /invalid token/i.test(message) || errorData?.code === "TOKEN_EXPIRED";

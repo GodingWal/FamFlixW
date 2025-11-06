@@ -102,12 +102,12 @@ class VoiceJobService {
     const totalDuration = recordings.reduce((sum, r) => sum + r.metadata.duration, 0);
     
     // Base processing time: 30 seconds + 2x audio duration
-    // Additional time for quality analysis and ElevenLabs API
+    // Additional time for quality analysis and TTS processing
     const baseTime = 30;
     const processingMultiplier = 2;
-    const apiOverhead = 60; // ElevenLabs processing time
+    const processingOverhead = 45; // TTS pipeline overhead (approx)
     
-    return baseTime + (totalDuration * processingMultiplier) + apiOverhead;
+    return baseTime + (totalDuration * processingMultiplier) + processingOverhead;
   }
 
   private async processQueue() {
@@ -245,9 +245,8 @@ class VoiceJobService {
         audioFileCount: audioFiles.length
       });
 
-      // For ElevenLabs Instant Voice Cloning, we can send multiple files for better quality
-      // The API accepts multiple audio files in a single request
-      // Use the new method that supports multiple files directly for better quality
+      // Send multiple recordings to improve clone quality (Chatterbox aggregates signals)
+      // Use the method that supports multiple files directly for better quality
       const voiceProfileId = await voiceService.createVoiceCloneFromFiles(
         audioFiles,
         job.name,

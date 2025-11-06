@@ -12,7 +12,9 @@ async function ensureLongPrompt(pythonBin: string, outPath: string) {
     await fs.access(outPath);
     const st = await fs.stat(outPath);
     if (st.size > 300_000) return; // ~>3s at 96KB/s rough
-  } catch {}
+  } catch (e) {
+    // If the file is missing or too small, we will (re)generate it below.
+  }
 
   await fs.mkdir(path.dirname(outPath), { recursive: true });
   const text = 'This is a longer sample for the Chatterbox text to speech system. We will continue speaking for several seconds to ensure the duration exceeds the minimum required length. This test verifies end-to-end voice cloning and synthesis.';

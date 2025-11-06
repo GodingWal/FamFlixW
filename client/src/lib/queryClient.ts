@@ -99,6 +99,7 @@ export async function apiRequest(
       headers,
       body: data instanceof FormData ? data : (data ? JSON.stringify(data) : undefined),
       credentials: "include", // Always include cookies
+      cache: "no-store", // Avoid conditional GET/304 and always hit the network
     });
 
     await throwIfResNotOk(res);
@@ -144,17 +145,41 @@ export const getQueryFn: <T>(options: {
       headers["Authorization"] = `Bearer ${token}`;
     }
 
-    const res = await fetch(queryKey.join("/") as string, {
-      headers,
-      credentials: "include",
-    });
+    const url = queryKey.join("/") as string;
+    const doFetch = async () =>
+      fetch(url, {
+        headers,
+        credentials: "include",
+        cache: "no-store", // Avoid conditional GET/304
+      });
+
+    let res = await doFetch();
+
+    // If unauthorized or invalid token, attempt token refresh once
+    if (res.status === 401 || res.status === 403) {
+      let errorData: any = undefined;
+      try {
+        errorData = await res.clone().json();
+      } catch {}
+      const message = String(errorData?.error || errorData?.message || "");
+      const shouldRefresh =
+        res.status === 401 || /invalid token/i.test(message) || errorData?.code === "TOKEN_EXPIRED";
+
+      if (shouldRefresh) {
+        const newToken = await refreshTokens();
+        if (newToken) {
+          headers["Authorization"] = `Bearer ${newToken}`;
+          res = await doFetch();
+        }
+      }
+    }
 
     if (unauthorizedBehavior === "returnNull" && res.status === 401) {
-      return null;
+      return null as any;
     }
 
     await throwIfResNotOk(res);
-    return await res.json();
+    return (await res.json()) as any;
   };
 
 // Enhanced query client with better error handling and retry logic

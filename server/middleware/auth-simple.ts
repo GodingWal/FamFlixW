@@ -63,6 +63,34 @@ export const authenticateToken = async (req: AuthRequest, res: Response, next: N
   }
 
   if (!token) {
+    // Attempt transparent refresh if a valid refresh token cookie is present
+    const refreshTokenCookie = req.cookies?.refreshToken;
+    if (refreshTokenCookie) {
+      try {
+        const decoded = verifyRefreshToken(refreshTokenCookie);
+        const user = await storage.getUser(decoded.userId);
+        if (user && user.isActive) {
+          const newAccessToken = generateAccessToken(user.id);
+          // Set new access token cookie
+          res.cookie('accessToken', newAccessToken, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: 'lax',
+            maxAge: 15 * 60 * 1000, // 15 minutes
+          });
+          // Attach user to request and continue
+          req.user = {
+            id: user.id,
+            email: user.email,
+            username: user.username,
+            role: user.role || "user",
+          };
+          return next();
+        }
+      } catch {
+        // Fall through to 401 below
+      }
+    }
     return res.status(401).json({ error: "Access token required" });
   }
 

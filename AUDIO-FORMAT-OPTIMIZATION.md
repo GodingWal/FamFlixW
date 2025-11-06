@@ -1,4 +1,6 @@
-# Audio Format Optimization for ElevenLabs Voice Cloning
+# Audio Format Optimization for Voice Cloning (Legacy Notes)
+
+> Note: This document contains legacy references to ElevenLabs from an earlier iteration. The current system uses the local Chatterbox TTS pipeline exclusively and no longer integrates with ElevenLabs. The general audio optimization guidance remains applicable.
 
 ## Overview
 Implemented comprehensive audio format optimization to ensure the best possible quality when sending audio to ElevenLabs for voice cloning, following their recommended specifications.

@@ -14,7 +14,15 @@ const compat = new FlatCompat({
 
 export default [
   {
-    ignores: ['dist', 'coverage', 'node_modules', 'client/public/**', '.eslintrc.js'],
+    ignores: [
+      'dist',
+      'coverage',
+      'node_modules',
+      'client/public/**',
+      '.eslintrc.js',
+      '.venv/**',
+      '**/site-packages/**',
+    ],
   },
   ...compat.config({
     env: {

@@ -98,7 +98,9 @@ export class ChatterboxProvider implements ITTSProvider {
     const { url } = await uploadPromise;
 
     // Optionally clean up temp file
-    try { await fsp.unlink(outFile); } catch {}
+    try { await fsp.unlink(outFile); } catch (e) {
+      // ignore cleanup errors
+    }
 
     return {
       key: s3Key,

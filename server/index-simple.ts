@@ -7,6 +7,8 @@ import { setupVite, serveStatic, log } from "./vite";
 const app = express();
 
 // Basic middleware
+// Disable ETag for API JSON to avoid 304 Not Modified on conditional GETs
+app.set('etag', false);
 app.use(express.json({
   limit: '10mb',
   verify: (req, _res, buf) => {
@@ -17,6 +19,19 @@ app.use(express.json({
 }));
 app.use(express.urlencoded({ extended: false, limit: '10mb' }));
 app.use(cookieParser());
+
+// No-cache for API endpoints to always return fresh JSON
+app.use((req, res, next) => {
+  if (req.path.startsWith('/api')) {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+    // Also explicitly remove conditional headers that might yield 304
+    delete req.headers['if-none-match'];
+    delete req.headers['if-modified-since'];
+  }
+  next();
+});
 
 // Basic logging middleware
 app.use((req, res, next) => {

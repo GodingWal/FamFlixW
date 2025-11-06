@@ -39,20 +39,33 @@ export function VideoCard({ video }: VideoCardProps) {
       const response = await apiRequest("DELETE", `/api/videos/${videoId}`);
       return response.json();
     },
+    onMutate: async (videoId: string) => {
+      await queryClient.cancelQueries({ queryKey: ["/api/videos"] });
+      const previous = queryClient.getQueryData<any[]>(["/api/videos"]);
+      if (Array.isArray(previous)) {
+        queryClient.setQueryData(["/api/videos"], previous.filter(v => v.id !== videoId));
+      }
+      return { previous };
+    },
+    onError: (error: any, _vars, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(["/api/videos"], context.previous);
+      }
+      toast({
+        title: "Delete failed",
+        description: error?.message || "Failed to delete video",
+        variant: "destructive",
+      });
+    },
     onSuccess: () => {
       toast({
         title: "Video deleted",
         description: "The video has been successfully deleted.",
       });
+    },
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/videos"] });
-    },
-    onError: (error: any) => {
-      toast({
-        title: "Delete failed",
-        description: error.message || "Failed to delete video",
-        variant: "destructive",
-      });
-    },
+    }
   });
 
   const formatDuration = (seconds?: number) => {
@@ -210,6 +223,17 @@ export function VideoCard({ video }: VideoCardProps) {
               data-testid="button-share"
             >
               <i className="fas fa-share"></i>
+            </Button>
+
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleDelete}
+              disabled={deleteVideoMutation.isPending}
+              className="text-destructive hover:text-destructive"
+              data-testid="button-delete"
+            >
+              <i className="fas fa-trash"></i>
             </Button>
             
             <DropdownMenu>

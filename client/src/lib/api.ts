@@ -5,6 +5,8 @@ export const api = {
       headers: {
         Authorization: token ? `Bearer ${token}` : "",
       },
+      credentials: 'include',
+      cache: 'no-store',
     });
     
     if (!response.ok) {
@@ -24,6 +26,8 @@ export const api = {
         Authorization: token ? `Bearer ${token}` : "",
       },
       body: JSON.stringify(data),
+      credentials: 'include',
+      cache: 'no-store',
     });
     
     if (!response.ok) {
@@ -43,6 +47,8 @@ export const api = {
         Authorization: token ? `Bearer ${token}` : "",
       },
       body: JSON.stringify(data),
+      credentials: 'include',
+      cache: 'no-store',
     });
     
     if (!response.ok) {
@@ -60,6 +66,8 @@ export const api = {
       headers: {
         Authorization: token ? `Bearer ${token}` : "",
       },
+      credentials: 'include',
+      cache: 'no-store',
     });
     
     if (!response.ok) {
@@ -78,6 +86,8 @@ export const api = {
         Authorization: token ? `Bearer ${token}` : "",
       },
       body: formData,
+      credentials: 'include',
+      cache: 'no-store',
     });
     
     if (!response.ok) {

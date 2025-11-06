@@ -1,8 +1,8 @@
-import { checkDatabaseHealth } from '../db/connection';
-import { config } from '../config';
 import { logger } from '../utils/logger';
 import { promises as fs } from 'fs';
+import { constants as fsConstants } from 'fs';
 import { join } from 'path';
+import type { Config } from '../config';
 
 export interface HealthCheck {
   service: string;
@@ -43,6 +43,8 @@ class HealthService {
   }
 
   async getSystemHealth(): Promise<SystemHealth> {
+    // Lazily import config so tests can mock it
+    const { config } = await import('../config');
     const checks: HealthCheck[] = [];
     
     // Database health check
@@ -50,12 +52,12 @@ class HealthService {
     checks.push(dbHealth);
 
     // File system health check
-    const fsHealth = await this.checkFileSystem();
+    const fsHealth = await this.checkFileSystem(config);
     checks.push(fsHealth);
 
     // External API health checks
     if (config.OPENAI_API_KEY) {
-      const openAIHealth = await this.checkOpenAI();
+      const openAIHealth = await this.checkOpenAI(config);
       checks.push(openAIHealth);
     }
 
@@ -77,6 +79,8 @@ class HealthService {
 
   private async checkDatabase(): Promise<HealthCheck> {
     try {
+      // Lazily import to allow Vitest mocking to take effect
+      const { checkDatabaseHealth } = await import('../db/connection');
       const result = await checkDatabaseHealth();
       return {
         service: 'database',
@@ -98,13 +102,13 @@ class HealthService {
     }
   }
 
-  private async checkFileSystem(): Promise<HealthCheck> {
+  private async checkFileSystem(config: Config): Promise<HealthCheck> {
     try {
       const startTime = Date.now();
       const uploadDir = join(process.cwd(), config.UPLOAD_DIR);
       
       // Check if upload directory exists and is writable
-      await fs.access(uploadDir, fs.constants.W_OK);
+      await fs.access(uploadDir, fsConstants.W_OK);
       
       // Try to write a test file
       const testFile = join(uploadDir, '.health-check');
@@ -134,7 +138,7 @@ class HealthService {
 
   // Removed ElevenLabs health check
 
-  private async checkOpenAI(): Promise<HealthCheck> {
+  private async checkOpenAI(config: Config): Promise<HealthCheck> {
     try {
       const startTime = Date.now();
       const response = await fetch('https://api.openai.com/v1/models', {
@@ -218,6 +222,7 @@ class HealthService {
   // Simplified health check for load balancers
   async getSimpleHealth(): Promise<{ status: string; timestamp: string }> {
     try {
+      const { checkDatabaseHealth } = await import('../db/connection');
       const dbHealth = await checkDatabaseHealth();
       return {
         status: dbHealth.status === 'healthy' ? 'ok' : 'error',

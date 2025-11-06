@@ -1,5 +1,7 @@
 # Voice Pipeline Enhancement Summary
 
+> Note: This document includes legacy references to ElevenLabs from an earlier iteration. The system now uses the local Chatterbox TTS pipeline exclusively. The pipeline descriptions remain useful, but any ElevenLabs-specific steps are no longer active.
+
 ## Overview
 Enhanced the complete voice cloning pipeline from audio upload to ElevenLabs integration and database storage.
 

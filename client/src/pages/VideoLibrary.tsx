@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
 import { Navigation } from "@/components/Navigation";
 import AdBanner from "@/components/AdBanner";
@@ -12,11 +12,13 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { shareVideo } from "@/lib/shareVideo";
+import { apiRequest } from "@/lib/queryClient";
 
 export default function VideoLibrary() {
   const { user } = useAuth();
   const { toast } = useToast();
   const [, setLocation] = useLocation();
+  const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedFamily, setSelectedFamily] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
@@ -28,12 +30,34 @@ export default function VideoLibrary() {
 
   const { data: videos, isLoading: videosLoading } = useQuery({
     queryKey: ["/api/videos"],
+    refetchInterval: 4000,
+    refetchOnWindowFocus: true,
   });
 
   const { data: recentActivity } = useQuery({
     queryKey: ["/api/families", Array.isArray(families) ? families[0]?.id : null, "activities"],
     enabled: Array.isArray(families) && !!families[0]?.id,
   });
+
+  const deleteVideoMutation = useMutation({
+    mutationFn: async (videoId: string) => {
+      const res = await apiRequest("DELETE", `/api/videos/${videoId}`);
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Video deleted", description: "The video has been deleted." });
+      queryClient.invalidateQueries({ queryKey: ["/api/videos"] });
+    },
+    onError: (error: any) => {
+      toast({ title: "Delete failed", description: error?.message || "Failed to delete video", variant: "destructive" });
+    },
+  });
+
+  const handleDeleteVideo = (id: string) => {
+    if (window.confirm("Are you sure you want to delete this video?")) {
+      deleteVideoMutation.mutate(id);
+    }
+  };
 
   // Filter and sort videos
   const filteredVideos = Array.isArray(videos) ? videos.filter((video: any) => {
@@ -361,6 +385,16 @@ export default function VideoLibrary() {
                                 data-testid="button-share"
                               >
                                 <i className="fas fa-share"></i>
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleDeleteVideo(video.id)}
+                                disabled={deleteVideoMutation.isPending}
+                                data-testid="button-delete"
+                                className="text-destructive hover:text-destructive"
+                              >
+                                <i className="fas fa-trash"></i>
                               </Button>
                             </div>
                           </div>

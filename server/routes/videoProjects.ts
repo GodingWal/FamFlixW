@@ -3,6 +3,10 @@ import { db } from '../db.js';
 import { sql } from 'drizzle-orm';
 import { authenticateToken, AuthRequest } from '../middleware/auth-simple.js';
 import { videoService } from '../services/videoService';
+import { storage } from '../storage';
+import path from 'path';
+import fs from 'fs/promises';
+import { spawn } from 'child_process';
 
 const router = Router();
 
@@ -24,6 +28,86 @@ async function ensureTemplateVideosTable() {
       updated_at TEXT DEFAULT (datetime('now'))
     )
   `);
+}
+
+async function setProjectProgress(projectId: string | number, progress: number, stage: string) {
+  try {
+    const now = new Date().toISOString();
+    const row = await db.get(sql`SELECT metadata FROM video_projects WHERE id = ${projectId}`);
+    let meta: any = {};
+    try {
+      meta = row?.metadata ? (typeof row.metadata === 'string' ? JSON.parse(row.metadata) : row.metadata) : {};
+    } catch {
+      meta = {};
+    }
+    const history = Array.isArray(meta.processingHistory) ? meta.processingHistory : [];
+    history.push({ status: stage, timestamp: now });
+    meta.processingHistory = history;
+    await db.run(sql`
+      UPDATE video_projects
+      SET processing_progress = ${progress}, metadata = ${JSON.stringify(meta)}, updated_at = ${now}
+      WHERE id = ${projectId}
+    `);
+  } catch (e) {
+    console.error('[processing] Failed to set progress:', e);
+  }
+}
+
+function toLocalUploadsPath(url: string): string {
+  if (!url || !url.startsWith('/uploads/')) {
+    throw new Error(`Unsupported uploads URL: ${url}`);
+  }
+  return path.join(process.cwd(), url.replace(/^\/+/, ''));
+}
+
+// Run the Python voice replacement pipeline
+async function runVoiceReplacementPipeline(inputVideoPath: string, outputVideoPath: string, promptWavPath: string): Promise<void> {
+  await fs.mkdir(path.dirname(outputVideoPath), { recursive: true });
+
+  const pythonBin = process.env.PYTHON_BIN || 'python3';
+  const scriptPath = path.resolve(process.cwd(), 'scripts', 'voice_replace_pipeline.py');
+  const args: string[] = [
+    scriptPath,
+    '--input-video', inputVideoPath,
+    '--output-video', outputVideoPath,
+    '--audio-prompt', promptWavPath,
+    '--device', String(process.env.CHATTERBOX_DEVICE || 'cpu'),
+  ];
+
+  // Optional: override the Whisper model for transcription (e.g., tiny, base, small, medium)
+  const whisperModel = process.env.WHISPER_MODEL;
+  if (whisperModel && whisperModel.length > 0) {
+    args.push('--whisper-model', whisperModel);
+  }
+
+  // Prefer faster-whisper for transcription by default; allow override via env
+  const transcriber = String(process.env.TRANSCRIBER || 'faster-whisper');
+  args.push('--transcriber', transcriber);
+
+  // Optional: direct CTranslate2 settings for faster-whisper
+  const ct2Device = process.env.WHISPER_CT2_DEVICE || undefined;
+  const ct2Compute = process.env.WHISPER_CT2_COMPUTE || undefined;
+  const ct2Beam = process.env.WHISPER_CT2_BEAM || undefined;
+  if (ct2Device) {
+    args.push('--ct2-device', ct2Device);
+  }
+  if (ct2Compute) {
+    args.push('--ct2-compute', ct2Compute);
+  }
+  if (ct2Beam) {
+    args.push('--ct2-beam-size', ct2Beam);
+  }
+
+  await new Promise<void>((resolve, reject) => {
+    const proc = spawn(pythonBin, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    let stderr = '';
+    proc.stderr.on('data', (d: Buffer) => { stderr += d.toString(); });
+    proc.on('error', (e: Error) => reject(e));
+    proc.on('close', (code: number | null) => {
+      if (code === 0) return resolve();
+      reject(new Error(`voice_replace_pipeline exited with code ${code}: ${stderr}`));
+    });
+  });
 }
 
 async function ensureVideoProjectsTable() {
@@ -408,16 +492,45 @@ router.post('/api/video-projects/:id/process', authenticateToken, async (req: Au
       }
     }
 
-    // NOTE: Actual rendering pipeline should asynchronously update the linked video with the final URL
-    // For now, just acknowledge the request
+    // Acknowledge the request immediately; perform processing asynchronously
     res.json({ message: 'Processing started', projectId: id, linkedVideoId: linkedVideoId ?? null });
 
-    // Simulate asynchronous processing completion so projects don't remain in limbo
-    setTimeout(async () => {
+    // Begin real voice replacement pipeline asynchronously
+    (async () => {
       try {
-        const completionTimestamp = new Date().toISOString();
-        const outputUrl = projectWithMeta?.template_video_url || `/generated/video-${id}.mp4`;
+        await setProjectProgress(id, 5, 'starting');
+        // Resolve input video path from template video URL
+        const templateUrl: string | null = projectWithMeta?.template_video_url ?? null;
+        if (!templateUrl) {
+          throw new Error('Template video URL not found for project');
+        }
+        const inputVideoPath = toLocalUploadsPath(templateUrl);
+        console.log('[processing] input video path:', inputVideoPath);
 
+        // Resolve voice prompt path from selected voice profile
+        const profileId = String(project.voice_profile_id);
+        const profile = await storage.getVoiceProfile(profileId);
+        if (!profile) {
+          throw new Error('Selected voice profile not found');
+        }
+        const promptPath = (profile as any).providerRef || (profile.metadata as any)?.chatterbox?.audioPromptPath;
+        if (!promptPath) {
+          throw new Error('Voice profile is missing an audio prompt path');
+        }
+        console.log('[processing] prompt wav path:', promptPath);
+
+        // Determine output file location under uploads/videos
+        const outputFileName = `processed-${id}.mp4`;
+        const outputUrl = `/uploads/videos/${outputFileName}`;
+        const outputVideoPath = toLocalUploadsPath(outputUrl);
+        console.log('[processing] output video path:', outputVideoPath);
+
+        // Run the Python voice replacement pipeline
+        await setProjectProgress(id, 15, 'pipeline_spawn');
+        await runVoiceReplacementPipeline(inputVideoPath, outputVideoPath, promptPath);
+
+        const completionTimestamp = new Date().toISOString();
+        // Update project record on success
         let meta: any = null;
         try {
           meta = projectWithMeta?.metadata
@@ -428,7 +541,6 @@ router.post('/api/video-projects/:id/process', authenticateToken, async (req: Au
         } catch {
           meta = {};
         }
-
         const history = Array.isArray(meta?.processingHistory) ? meta.processingHistory : [];
         history.push({ status: 'completed', timestamp: completionTimestamp });
         meta.processingHistory = history;
@@ -446,26 +558,43 @@ router.post('/api/video-projects/:id/process', authenticateToken, async (req: Au
           WHERE id = ${id}
         `);
 
+        console.log('[processing] completed. output url:', outputUrl);
         if (linkedVideoId) {
           try {
             const linkedVideoUpdates: Record<string, unknown> = {
               status: 'completed',
               videoUrl: outputUrl,
             };
-
             if (projectWithMeta?.template_thumbnail) {
               linkedVideoUpdates.thumbnail = projectWithMeta.template_thumbnail;
             }
-
             await videoService.updateVideo(linkedVideoId, linkedVideoUpdates as any, userId);
           } catch (finalizeErr) {
             console.error('Failed to finalize linked video:', finalizeErr);
           }
         }
-      } catch (finalizeProjectErr) {
-        console.error('Failed to finalize video project:', finalizeProjectErr);
+      } catch (err: any) {
+        console.error('[processing] Voice replacement failed:', err?.message || err);
+        const failedAt = new Date().toISOString();
+        await db.run(sql`
+          UPDATE video_projects
+          SET
+            status = 'failed',
+            processing_progress = 100,
+            processing_error = ${String(err?.message || 'Voice replacement failed')},
+            updated_at = ${failedAt}
+          WHERE id = ${id}
+        `);
+        // Optionally mark linked video as error (schema uses 'error')
+        if (linkedVideoId) {
+          try {
+            await videoService.updateVideo(linkedVideoId, { status: 'error' } as any, userId);
+          } catch (e) {
+            console.error('Failed to mark linked video failed:', e);
+          }
+        }
       }
-    }, 1500);
+    })();
   } catch (error) {
     console.error('Error starting video processing:', error);
     res.status(500).json({ error: 'Failed to start processing' });

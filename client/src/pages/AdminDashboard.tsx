@@ -234,11 +234,11 @@ const AdminDashboard: React.FC = () => {
     });
   }
 
-  if (systemHealth && !systemHealth.elevenLabs) {
+  if (systemHealth && !systemHealth.tts) {
     alerts.push({
       severity: 'warning',
-      title: 'ElevenLabs API unavailable',
-      description: 'Voice cloning requests may be delayed until credentials are configured.',
+      title: 'TTS Engine unavailable',
+      description: 'Voice synthesis may be delayed until the TTS engine is available.',
     });
   }
 

@@ -12,6 +12,9 @@ import {
 
 const app = express();
 
+// Disable ETag so JSON responses are not turned into 304 Not Modified by Express freshness checks
+app.set('etag', false);
+
 // Security middleware
 app.use(securityHeaders);
 app.use(corsConfig);
@@ -30,6 +33,18 @@ app.use(express.urlencoded({ extended: false, limit: '10mb' }));
 
 // Request sanitization
 app.use(sanitizeRequest);
+
+// No-cache for API JSON responses; also strip conditional headers that would trigger 304
+app.use((req, res, next) => {
+  if (req.path.startsWith('/api')) {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+    delete req.headers['if-none-match'];
+    delete req.headers['if-modified-since'];
+  }
+  next();
+});
 
 app.use((req, res, next) => {
   const start = Date.now();

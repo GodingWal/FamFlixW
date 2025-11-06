@@ -14,6 +14,8 @@ export default function Dashboard() {
 
   const { data: videos, isLoading: videosLoading } = useQuery({
     queryKey: ["/api/videos"],
+    refetchInterval: 4000,
+    refetchOnWindowFocus: true,
   });
 
   const { data: families } = useQuery({

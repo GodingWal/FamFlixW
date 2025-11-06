@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useLocation } from "wouter";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -29,6 +30,7 @@ export default function VideoCreation() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState("details");
+  const [, navigate] = useLocation();
   const [videoFile, setVideoFile] = useState<File | null>(null);
   const [selectedProvidedVideo, setSelectedProvidedVideo] = useState<string | null>(null);
   const [aiPrompt, setAiPrompt] = useState("");
@@ -49,9 +51,9 @@ export default function VideoCreation() {
     queryKey: ["/api/families"],
   });
 
-  // Get admin-provided videos for users to select from
+  // Get template videos for users to select from
   const { data: providedVideos } = useQuery({
-    queryKey: ["/api/videos/provided"],
+    queryKey: ["/api/template-videos"],
     enabled: !isAdmin, // Only fetch for regular users
   });
 
@@ -89,20 +91,26 @@ export default function VideoCreation() {
 
         return response.json();
       } else {
-        // User project creation (no file upload)
-        const response = await apiRequest("POST", "/api/videos", {
-          ...data,
-          sourceVideoId: selectedProvidedVideo, // Link to the selected admin video
+        // User project creation (no file upload) against template videos
+        const response = await apiRequest("POST", "/api/video-projects", {
+          templateVideoId: selectedProvidedVideo ? Number(selectedProvidedVideo) : undefined,
+          status: "pending",
+          metadata: data.description ? { description: data.description } : undefined,
         });
         return response.json();
       }
     },
-    onSuccess: () => {
+    onSuccess: (result: any) => {
+      // If user flow, navigate to project setup
+      if (!isAdmin && result?.id) {
+        navigate(`/projects/${result.id}/setup`);
+      }
       toast({
         title: "Video created!",
         description: "Your video has been created successfully.",
       });
       queryClient.invalidateQueries({ queryKey: ["/api/videos"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/video-projects"] });
       form.reset();
       setVideoFile(null);
     },

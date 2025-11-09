@@ -732,7 +732,8 @@ export default function Stories() {
                           onClick={() => setSelectedSlug(story.slug)}
                           className={cn(
                             "w-full rounded-xl border border-border bg-card p-4 text-left transition hover:bg-secondary/30",
-                            isSelected && "ring-1 ring-primary/60"
+                            isSelected && "ring-1 ring-primary/60",
+                            "hover:shadow-lg hover:border-primary/30"
                           )}
                         >
                           <div className="flex flex-col gap-2">
@@ -779,6 +780,28 @@ export default function Stories() {
                     {!selectedStorySummary ? (
                       <div className="text-center text-muted-foreground">
                         Select a story to explore its sections.
+                      </div>
+                    ) : detailLoading ? (
+                      <div className="space-y-6">
+                        <div className="space-y-3">
+                          <Skeleton className="h-8 w-3/4" />
+                          <Skeleton className="h-4 w-1/2" />
+                          <div className="flex flex-wrap gap-2">
+                            <Skeleton className="h-6 w-24" />
+                            <Skeleton className="h-6 w-24" />
+                          </div>
+                          <Skeleton className="h-16 w-full" />
+                        </div>
+                        <div className="flex flex-wrap items-center gap-3">
+                          <Skeleton className="h-10 w-32" />
+                          <Skeleton className="h-10 w-32" />
+                          <Skeleton className="h-10 w-24" />
+                        </div>
+                        <div className="space-y-4">
+                          <Skeleton className="h-6 w-1/3" />
+                          <Skeleton className="h-24 w-full" />
+                          <Skeleton className="h-24 w-full" />
+                        </div>
                       </div>
                     ) : (
                       <div className="space-y-6">
@@ -972,93 +995,85 @@ export default function Stories() {
                           </div>
                         )}
 
-                        {detailLoading ? (
-                          <div className="space-y-3">
-                            <Skeleton className="h-5 w-1/2" />
-                            <Skeleton className="h-4 w-full" />
-                            <Skeleton className="h-4 w-full" />
-                          </div>
-                        ) : (
-                          <>
-                            {storyDetail?.content && (
-                              <div className="rounded-lg border border-border bg-card p-4 text-sm whitespace-pre-wrap leading-relaxed">
-                                {storyDetail.content}
+                        <>
+                          {storyDetail?.content && (
+                            <div className="rounded-lg border border-border bg-card p-4 text-sm whitespace-pre-wrap leading-relaxed">
+                              {storyDetail.content}
+                            </div>
+                          )}
+
+                          <div className="space-y-4">
+                            <h3 className="text-lg font-semibold text-foreground">
+                              Sections &amp; audio
+                            </h3>
+                            {mergedSections.length === 0 ? (
+                              <p className="text-sm text-slate-300">
+                                We could not load story sections yet. Try refreshing the page.
+                              </p>
+                            ) : (
+                              <div className="space-y-4">
+                                {mergedSections.map((section, index) => {
+                                  const status =
+                                    section.audio.status ?? "PENDING";
+                                  const badgeClass =
+                                    STATUS_BADGE_CLASS[status] ??
+                                    STATUS_BADGE_CLASS.PENDING;
+                                  return (
+                                    <div
+                                      key={section.id}
+                                      className="rounded-lg border border-border bg-card p-4 space-y-3"
+                                    >
+                                      <div className="flex flex-wrap items-center justify-between gap-3">
+                                        <div>
+                                          <p className="text-sm font-semibold text-foreground">
+                                            Section {index + 1}
+                                            {section.title ? ` · ${section.title}` : ""}
+                                          </p>
+                                          <p className="text-xs text-muted-foreground">
+                                            Words: {section.wordCount}
+                                          </p>
+                                        </div>
+                                        <Badge variant="outline" className={badgeClass}>
+                                          {status}
+                                        </Badge>
+                                      </div>
+                                      {section.text && (
+                                        <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap">
+                                          {section.text}
+                                        </p>
+                                      )}
+                                      {section.audio.audioUrl ? (
+                                        <audio
+                                          controls
+                                          preload="none"
+                                          className="w-full"
+                                          src={section.audio.audioUrl}
+                                        />
+                                      ) : (
+                                        <p className="text-xs text-slate-400">
+                                          Audio will appear here once generation completes.
+                                        </p>
+                                      )}
+                                      {section.audio.audioUrl && (
+                                        <div className="pt-1">
+                                          <Button size="sm" variant="outline" asChild>
+                                            <a
+                                              href={`/api/stories/${selectedStorySummary?.slug}/download/section/${section.id}?voiceId=${encodeURIComponent(
+                                                selectedVoiceProfile ?? ''
+                                              )}`}
+                                            >
+                                              <i className="fas fa-download mr-2" /> Download Section
+                                            </a>
+                                          </Button>
+                                        </div>
+                                      )}
+                                    </div>
+                                  );
+                                })}
                               </div>
                             )}
-
-                            <div className="space-y-4">
-                              <h3 className="text-lg font-semibold text-foreground">
-                                Sections &amp; audio
-                              </h3>
-                              {mergedSections.length === 0 ? (
-                                <p className="text-sm text-slate-300">
-                                  We could not load story sections yet. Try refreshing the page.
-                                </p>
-                              ) : (
-                                <div className="space-y-4">
-                                  {mergedSections.map((section, index) => {
-                                    const status =
-                                      section.audio.status ?? "PENDING";
-                                    const badgeClass =
-                                      STATUS_BADGE_CLASS[status] ??
-                                      STATUS_BADGE_CLASS.PENDING;
-                                    return (
-                                      <div
-                                        key={section.id}
-                                        className="rounded-lg border border-border bg-card p-4 space-y-3"
-                                      >
-                                        <div className="flex flex-wrap items-center justify-between gap-3">
-                                          <div>
-                                            <p className="text-sm font-semibold text-foreground">
-                                              Section {index + 1}
-                                              {section.title ? ` · ${section.title}` : ""}
-                                            </p>
-                                            <p className="text-xs text-muted-foreground">
-                                              Words: {section.wordCount}
-                                            </p>
-                                          </div>
-                                          <Badge variant="outline" className={badgeClass}>
-                                            {status}
-                                          </Badge>
-                                        </div>
-                                        {section.text && (
-                                          <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap">
-                                            {section.text}
-                                          </p>
-                                        )}
-                                        {section.audio.audioUrl ? (
-                                          <audio
-                                            controls
-                                            preload="none"
-                                            className="w-full"
-                                            src={section.audio.audioUrl}
-                                          />
-                                        ) : (
-                                          <p className="text-xs text-slate-400">
-                                            Audio will appear here once generation completes.
-                                          </p>
-                                        )}
-                                        {section.audio.audioUrl && (
-                                          <div className="pt-1">
-                                            <Button size="sm" variant="outline" asChild>
-                                              <a
-                                                href={`/api/stories/${selectedStorySummary?.slug}/download/section/${section.id}?voiceId=${encodeURIComponent(
-                                                  selectedVoiceProfile ?? ''
-                                                )}`}
-                                              >
-                                                <i className="fas fa-download mr-2" /> Download Section
-                                              </a>
-                                            </Button>
-                                          </div>
-                                        )}
-                                      </div>
-                                    );
-                                  })}
-                                </div>
-                              )}
-                            </div>
-                          </>
-                        )}
+                          </div>
+                        </>
                       </div>
                     )}
                   </div>

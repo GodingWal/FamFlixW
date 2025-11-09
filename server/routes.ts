@@ -39,6 +39,7 @@ import { voiceJobService } from "./services/voiceJobService";
 import { emailService } from "./services/emailService";
 import { storyService } from "./services/storyService";
 import storiesRouter from "./routes/stories";
+import storiesAdminRouter from "./routes/stories-admin";
 import {
   insertUserSchema,
   insertFamilySchema,
@@ -152,6 +153,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.use('/api', apiRateLimit);
   if (config.FEATURE_STORY_MODE) {
     app.use(storiesRouter);
+    app.use(storiesAdminRouter);
   }
 
   const parsePlacementId = (value: unknown) => {

@@ -4,7 +4,7 @@
   "type": "module",
   "license": "MIT",
   "scripts": {
-    "dev": "NODE_ENV=development tsx server/index-simple.ts",
+    "dev": "FEATURE_STORY_MODE=true NODE_ENV=development tsx server/index-simple.ts",
     "build": "vite build && esbuild server/index.ts scripts/workers/storyWorker.ts --platform=node --packages=external --bundle --format=esm --outdir=dist",
     "start": "NODE_ENV=production node dist/index.js",
     "check": "tsc",
@@ -153,7 +153,7 @@
     "tsx": "^4.20.6",
     "typescript": "5.6.3",
     "vite": "^5.4.19",
-    "vitest": "^2.1.8"
+    "vitest": "^2.1.9"
   },
   "optionalDependencies": {
     "bufferutil": "^4.0.8"

@@ -128,7 +128,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   if (process.env.FEATURE_STORY_MODE === 'true') {
     app.use(storiesRouter);
   }
-  app.use(adminRouter);
+  app.use('/api/admin', authenticateToken, adminRouter);
 
   // Serve audio files securely (previews and TTS generations)
   app.get('/api/audio/:filename', authenticateToken, async (req: AuthRequest, res) => {

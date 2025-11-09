@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -18,6 +18,21 @@ import type { VoiceGeneration } from "@shared/schema";
 
 // Feature flags
 const FACE_FEATURE_ENABLED = false;
+
+interface StorySummary {
+  slug: string;
+  title: string;
+  summary?: string | null;
+  category?: string | null;
+}
+
+interface StoryListResponse {
+  stories: StorySummary[];
+}
+
+interface StoryDetailResponse extends StorySummary {
+  content?: string | null;
+}
 
 const voiceProfileSchema = z.object({
   name: z.string().min(1, "Name is required"),
@@ -91,6 +106,8 @@ export default function VoiceCloning() {
   const [newFamilyName, setNewFamilyName] = useState("");
   const [playingAudio, setPlayingAudio] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
+  const [selectedStorySlug, setSelectedStorySlug] = useState<string>("");
+  const lastAppliedStorySlugRef = useRef<string | null>(null);
 
   const profileForm = useForm<VoiceProfileFormData>({
     resolver: zodResolver(voiceProfileSchema),
@@ -168,6 +185,77 @@ export default function VoiceCloning() {
     queryKey: [`/api/voice-profiles/${selectedProfile}/generations`],
     enabled: !!selectedProfile,
   });
+
+  const {
+    data: storyCatalog,
+    isLoading: storyCatalogLoading,
+    error: storyCatalogError,
+    refetch: refetchStoryCatalog,
+  } = useQuery<StoryListResponse>({
+    queryKey: ["voice-cloning-story-catalog"],
+    queryFn: async () => {
+      const response = await fetch("/api/stories?limit=50");
+      if (!response.ok) {
+        throw new Error("Failed to load stories");
+      }
+      return response.json();
+    },
+  });
+
+  const {
+    data: selectedStory,
+    isFetching: selectedStoryLoading,
+    error: selectedStoryError,
+  } = useQuery<StoryDetailResponse>({
+    queryKey: ["voice-cloning-story-detail", selectedStorySlug],
+    queryFn: async () => {
+      const response = await fetch(`/api/stories/${selectedStorySlug}`);
+      if (!response.ok) {
+        throw new Error("Failed to load story content");
+      }
+      return response.json();
+    },
+    enabled: Boolean(selectedStorySlug),
+    staleTime: 1000 * 60 * 5,
+  });
+
+  useEffect(() => {
+    if (storyCatalogError instanceof Error) {
+      toast({
+        title: "Story library unavailable",
+        description: storyCatalogError.message || "We couldn't load curated stories right now.",
+        variant: "destructive",
+      });
+    }
+  }, [storyCatalogError, toast]);
+
+  useEffect(() => {
+    if (selectedStoryError instanceof Error) {
+      toast({
+        title: "Couldn't load story",
+        description: selectedStoryError.message || "Try picking a different story or writing your own.",
+        variant: "destructive",
+      });
+      setSelectedStorySlug("");
+      lastAppliedStorySlugRef.current = null;
+    }
+  }, [selectedStoryError, toast]);
+
+  useEffect(() => {
+    if (
+      selectedStorySlug &&
+      selectedStory?.content &&
+      lastAppliedStorySlugRef.current !== selectedStorySlug
+    ) {
+      generationForm.setValue("text", selectedStory.content);
+      generationForm.clearErrors("text");
+      lastAppliedStorySlugRef.current = selectedStorySlug;
+      toast({
+        title: "Story loaded",
+        description: `We filled the text area with “${selectedStory.title ?? "selected story"}”. Feel free to edit it before generating speech.`,
+      });
+    }
+  }, [selectedStorySlug, selectedStory, generationForm, toast]);
 
   const createProfileMutation = useMutation({
     mutationFn: async (data: VoiceProfileFormData & { audio: File }) => {
@@ -1323,7 +1411,57 @@ export default function VoiceCloning() {
                     </div>
 
                     <div>
-                      <div className="flex items-center justify-between mb-2">
+                      <div className="space-y-2">
+                        <Label htmlFor="story-template">Story template</Label>
+                        {storyCatalogLoading ? (
+                          <p className="text-sm text-muted-foreground">Loading curated stories…</p>
+                        ) : storyCatalogError ? (
+                          <div className="flex items-center justify-between rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                            <span>We couldn't load the story library.</span>
+                            <Button variant="outline" size="xs" onClick={() => refetchStoryCatalog()}>
+                              Retry
+                            </Button>
+                          </div>
+                        ) : (
+                          <Select
+                            value={selectedStorySlug || "custom"}
+                            onValueChange={(value) => {
+                              if (value === "custom") {
+                                setSelectedStorySlug("");
+                                lastAppliedStorySlugRef.current = null;
+                                return;
+                              }
+                              setSelectedStorySlug(value);
+                            }}
+                          >
+                            <SelectTrigger id="story-template" data-testid="select-story-template">
+                              <SelectValue placeholder="Write your own or choose a curated story" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="custom">Write my own script</SelectItem>
+                              {(storyCatalog?.stories ?? [])
+                                .filter((story) => Boolean(story.slug))
+                                .map((story) => (
+                                  <SelectItem key={story.slug} value={story.slug}>
+                                    {story.title}
+                                    {story.category ? ` · ${story.category}` : ""}
+                                  </SelectItem>
+                                ))}
+                            </SelectContent>
+                          </Select>
+                        )}
+                        {selectedStorySlug && (
+                          <p className="text-xs text-muted-foreground">
+                            {selectedStoryLoading
+                              ? "Fetching story content…"
+                              : selectedStory
+                              ? "Loaded story content into the text area below."
+                              : "Story content will appear in the text area once loaded."}
+                          </p>
+                        )}
+                      </div>
+
+                      <div className="flex items-center justify-between mb-2 mt-4">
                         <Label htmlFor="text">Text to Speak</Label>
                         <div className="flex items-center gap-2">
                           {!selectedProfile && (

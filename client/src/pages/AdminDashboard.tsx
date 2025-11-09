@@ -6,12 +6,12 @@ import { Redirect } from 'wouter';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { 
-  Users, 
-  Video, 
-  Mic, 
-  Upload, 
-  TrendingUp, 
+import {
+  Users,
+  Video,
+  Mic,
+  Upload,
+  TrendingUp,
   Clock,
   CheckCircle,
   XCircle,
@@ -20,7 +20,8 @@ import {
   Sparkles,
   BarChart3,
   ShieldCheck,
-  ArrowUpRight
+  ArrowUpRight,
+  Book
 } from 'lucide-react';
 import { Link } from 'wouter';
 import { Progress } from '@/components/ui/progress';
@@ -166,6 +167,12 @@ const AdminDashboard: React.FC = () => {
       description: 'Add new curated templates to the public catalog.',
       href: '/admin/upload-templates',
       icon: Upload,
+    },
+    {
+      title: 'Upload Stories',
+      description: 'Publish new markdown stories for the library.',
+      href: '/admin/upload-story',
+      icon: Book,
     },
     {
       title: 'Monitor Voice Jobs',
@@ -354,6 +361,12 @@ const AdminDashboard: React.FC = () => {
                 <Link href="/admin/upload-templates">
                   <Upload className="mr-2 h-4 w-4" />
                   Upload Templates
+                </Link>
+              </Button>
+              <Button variant="outline" asChild>
+                <Link href="/admin/upload-story">
+                  <Book className="mr-2 h-4 w-4" />
+                  Upload Stories
                 </Link>
               </Button>
               <Button variant="ghost" className="gap-2" asChild>

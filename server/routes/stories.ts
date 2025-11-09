@@ -581,7 +581,9 @@ router.get("/api/stories/:slug/download/full", authenticateToken, ensureStoryMod
     if (!res.headersSent) {
       res.status(500).json({ error: e.message });
     } else {
-      try { res.end(); } catch {}
+      try { res.end(); } catch (e) {
+        console.error("Failed to end response stream:", e);
+      }
     }
   });
   ff.on("close", (code) => {
@@ -589,7 +591,9 @@ router.get("/api/stories/:slug/download/full", authenticateToken, ensureStoryMod
       if (!res.headersSent) {
         res.status(500).json({ error: `ffmpeg failed with code ${code}: ${errBuf}` });
       } else {
-        try { res.end(); } catch {}
+        try { res.end(); } catch (e) {
+          console.error("Failed to end response stream:", e);
+        }
       }
     }
   });

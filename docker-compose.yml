@@ -32,6 +32,28 @@ services:
       retries: 3
       start_period: 40s
 
+  story-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=postgresql://famflix:famflix_password@postgres:5432/famflix
+      - REDIS_URL=redis://redis:6379
+      - JWT_SECRET=${JWT_SECRET:-your-super-secure-jwt-secret}
+      - JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET:-your-super-secure-refresh-secret}
+      - SESSION_SECRET=${SESSION_SECRET:-your-super-secure-session-secret}
+      - ELEVENLABS_API_KEY=${ELEVENLABS_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: ["node", "dist/storyWorker.js"]
+    restart: unless-stopped
+
+
   # PostgreSQL database
   postgres:
     image: postgres:15-alpine

@@ -1,14 +1,13 @@
-#!/usr/bin/env tsx
-import "dotenv/config";
-
 import { storyWorker } from "../../server/workers/storyWorker";
-import { redisConnection } from "../../server/queues/connection";
+import { logger } from "../../server/utils/logger";
 
-const shutdown = async () => {
+logger.info("Story worker starting...");
+
+const close = async () => {
+  logger.info("Story worker shutting down...");
   await storyWorker.close();
-  await redisConnection.quit();
   process.exit(0);
 };
 
-process.on("SIGINT", shutdown);
-process.on("SIGTERM", shutdown);
+process.on("SIGINT", close);
+process.on("SIGTERM", close);

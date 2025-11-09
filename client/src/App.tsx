@@ -28,6 +28,7 @@ const Contact = lazy(() => import("@/pages/Contact"));
 const NotFound = lazy(() => import("@/pages/not-found"));
 const AdminDashboard = lazy(() => import("@/pages/AdminDashboard"));
 const AdminTemplateUpload = lazy(() => import("@/pages/AdminTemplateUpload"));
+const AdminStoryUpload = lazy(() => import("@/pages/AdminStoryUpload"));
 import { useAuth } from "@/hooks/useAuth";
 
 function Router() {
@@ -52,6 +53,7 @@ function Router() {
           <Route path="/projects/:id/setup" component={ProjectSetup} />
                  <Route path="/admin" component={AdminDashboard} />
                  <Route path="/admin/upload-templates" component={AdminTemplateUpload} />
+                 <Route path="/admin/upload-story" component={AdminStoryUpload} />
           <Route path="/voice-cloning" component={VoiceCloning} />
           <Route path="/stories" component={Stories} />
           <Route path="/pricing" component={Pricing} />

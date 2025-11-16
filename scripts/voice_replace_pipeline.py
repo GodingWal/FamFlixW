@@ -188,7 +188,7 @@ def transcribe_with_faster_whisper(
     ct2_device = "cuda" if dev.startswith("cuda") else "cpu"
     ct2_compute = compute_type or ("float16" if ct2_device == "cuda" else "int8")
 
-    print(f"[pipeline] Transcribing with faster-whisper model={model_name} device={ct2_device} compute={ct2_compute}")
+    print(f"[pipeline] Loading faster-whisper model={model_name} device={ct2_device} compute={ct2_compute}")
     model = WhisperModel(model_name, device=ct2_device, compute_type=ct2_compute)
     segments_iter, _info = model.transcribe(
         str(audio_path),
@@ -732,7 +732,7 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     parser.add_argument("--audio-prompt", type=Path, required=True, help="Path to voice sample WAV/MP3 used as audio prompt")
     parser.add_argument(
         "--whisper-model",
-        default="medium",
+        default=os.environ.get("WHISPER_MODEL", "medium"),
         help="Whisper model name (tiny, base, small, medium, large, large-v2, ...)",
     )
     parser.add_argument(

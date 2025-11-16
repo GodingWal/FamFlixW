@@ -174,6 +174,7 @@ def transcribe_with_faster_whisper(
     compute_type: Optional[str] = None,
     beam_size: int = 5,
     word_timestamps: bool = True,
+    language: Optional[str] = None,
 ) -> List[TranscriptSegment]:
     """Transcribe using faster-whisper (CTranslate2 backend)."""
     try:
@@ -190,12 +191,17 @@ def transcribe_with_faster_whisper(
 
     print(f"[pipeline] Loading faster-whisper model={model_name} device={ct2_device} compute={ct2_compute}")
     model = WhisperModel(model_name, device=ct2_device, compute_type=ct2_compute)
+    print("[pipeline] Model loaded. Starting transcription...")
     segments_iter, _info = model.transcribe(
         str(audio_path),
         beam_size=beam_size,
         word_timestamps=word_timestamps,
+        language=language,
+        vad_filter=True,
     )
+    print("[pipeline] Processing segments...")
     segments_list = list(segments_iter)
+    print(f"[pipeline] Transcription done: {len(segments_list)} segments")
     segments: List[TranscriptSegment] = [
         TranscriptSegment(start=float(getattr(seg, "start", 0.0)), end=float(getattr(seg, "end", 0.0)), text=str(getattr(seg, "text", "")).strip())
         for seg in segments_list
@@ -345,6 +351,7 @@ def transcribe_audio(
             compute_type=ct2_compute,
             beam_size=max(1, int(ct2_beam_size)),
             word_timestamps=word_timestamps,
+            language=language,
         )
     elif backend == "whisper":
         return transcribe_with_openai_whisper(
@@ -732,8 +739,8 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     parser.add_argument("--audio-prompt", type=Path, required=True, help="Path to voice sample WAV/MP3 used as audio prompt")
     parser.add_argument(
         "--whisper-model",
-        default=os.environ.get("WHISPER_MODEL", "medium"),
-        help="Whisper model name (tiny, base, small, medium, large, large-v2, ...)",
+        default=os.environ.get("WHISPER_MODEL", "tiny"),
+        help="Whisper model name (tiny, base, small, medium, large, large-v2, ...) (tiny by default for speed)",
     )
     parser.add_argument(
         "--whisper-device",
@@ -760,13 +767,13 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--ct2-compute",
-        default=os.environ.get("WHISPER_CT2_COMPUTE", None),
+        default=os.environ.get("WHISPER_CT2_COMPUTE", "int8"),
         help="CTranslate2 compute type for faster-whisper (e.g. int8, int8_float16, float16, float32).",
     )
     parser.add_argument(
         "--ct2-beam-size",
         type=int,
-        default=int(os.environ.get("WHISPER_CT2_BEAM", "5")),
+        default=int(os.environ.get("WHISPER_CT2_BEAM", "1")),
         help="Beam size for faster-whisper decoding.",
     )
     parser.add_argument(
@@ -813,7 +820,7 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     # Chatterbox synthesis params
     parser.add_argument("--device", default=os.environ.get("CHATTERBOX_DEVICE", "cpu"), help="torch device: cpu or cuda")
     parser.add_argument("--multilingual", action="store_true", help="Use multilingual model")
-    parser.add_argument("--language", help="Language id for multilingual model (e.g. en, fr, zh)")
+    parser.add_argument("--language", default=os.environ.get("WHISPER_LANGUAGE", "en"), help="Language id for multilingual model (e.g. en, fr, zh)")
     parser.add_argument("--exaggeration", type=float, default=None, help="Emotion/exaggeration control (0..1)")
     parser.add_argument("--cfg-weight", dest="cfg_weight", type=float, default=None, help="Guidance weight (0..1)")
     parser.add_argument("--allow-fallback", action="store_true", help="Allow beep fallbacks (default: error on fallback)")  # Added

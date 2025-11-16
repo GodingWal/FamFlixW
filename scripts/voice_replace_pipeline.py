@@ -14,7 +14,7 @@ explicitly via the command-line options.
 Prerequisites
 -------------
 - ffmpeg and ffprobe available on the PATH.
-- Python packages: `faster-whisper` (recommended) or `openai-whisper`, plus `pydub`, `requests`, `torch`/`torchaudio`, and `chatterbox-tts`.
+- Python packages: `faster-whisper` (recommended) or `openai-whisper`, plus `pydub`, `torch`/`torchaudio`, and `chatterbox-tts`.
 - A clean voice sample WAV/MP3 that will be used as the audio prompt for zero-shot cloning.
 
 Example
@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import math
 import os
 import shutil
@@ -47,16 +48,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable, List, Optional
 
-import requests
-
-try:
-    from pydub import AudioSegment
-    from pydub.effects import normalize
-except ImportError as exc:  # pragma: no cover - pydub is an optional dependency at runtime
-    raise SystemExit(
-        "The `pydub` package is required for audio assembly.\n"
-        "Install it with `pip install pydub`."
-    ) from exc
+from pydub import AudioSegment
+from pydub.effects import normalize, speedup  # Fixed: Import speedup
 
 
 @dataclass
@@ -358,12 +351,12 @@ def transcribe_audio(
             word_timestamps=word_timestamps,
         )
     elif backend in ("whisper-cpp", "whisper_cpp"):
-        env_bin = Path(os.environ["WHISPER_CPP_BIN"]) if os.environ.get("WHISPER_CPP_BIN") else None
-        env_model = Path(os.environ["WHISPER_CPP_MODEL"]) if os.environ.get("WHISPER_CPP_MODEL") else None
+        env_bin = Path(os.environ.get("WHISPER_CPP_BIN", "")) if os.environ.get("WHISPER_CPP_BIN") else None  # Fixed: Safe Path
+        env_model = Path(os.environ.get("WHISPER_CPP_MODEL", "")) if os.environ.get("WHISPER_CPP_MODEL") else None
         env_threads = os.environ.get("WHISPER_CPP_THREADS")
         cpp_bin = whisper_cpp_bin or env_bin
         cpp_model = whisper_cpp_model or env_model
-        threads = whisper_cpp_threads or (int(env_threads) if env_threads else None)
+        threads = whisper_cpp_threads or (int(env_threads) if env_threads and env_threads.isdigit() else None)  # Fixed: isdigit
         if not cpp_model:
             raise PipelineError("WHISPER_CPP_MODEL (or --whisper-cpp-model) is required for whisper-cpp backend")
         return transcribe_with_whisper_cpp(
@@ -387,12 +380,12 @@ def transcribe_audio(
             )
         except PipelineError:
             # Optionally try whisper.cpp if CLI args or env vars are configured
-            env_bin = Path(os.environ["WHISPER_CPP_BIN"]) if "WHISPER_CPP_BIN" in os.environ else None
-            env_model = Path(os.environ["WHISPER_CPP_MODEL"]) if "WHISPER_CPP_MODEL" in os.environ else None
+            env_bin = Path(os.environ.get("WHISPER_CPP_BIN", "")) if os.environ.get("WHISPER_CPP_BIN") else None  # Fixed: Safe
+            env_model = Path(os.environ.get("WHISPER_CPP_MODEL", "")) if os.environ.get("WHISPER_CPP_MODEL") else None
             env_threads = os.environ.get("WHISPER_CPP_THREADS")
             cpp_bin = whisper_cpp_bin or env_bin
             cpp_model = whisper_cpp_model or env_model
-            threads = whisper_cpp_threads or (int(env_threads) if env_threads else None)
+            threads = whisper_cpp_threads or (int(env_threads) if env_threads and env_threads.isdigit() else None)
             if cpp_model:
                 try:
                     return transcribe_with_whisper_cpp(
@@ -442,7 +435,9 @@ def chatterbox_tts(
     language: Optional[str] = None,
     exaggeration: Optional[float] = None,
     cfg_weight: Optional[float] = None,
+    allow_fallback: bool = False,  # Added: Flag to tolerate beeps
     timeout_override: Optional[int] = None,
+    verbose: bool = False,  # Added: Propagate verbose
 ) -> None:
     """Call the local Chatterbox CLI wrapper to synthesize speech and save the audio clip."""
     python_bin = find_python()
@@ -477,6 +472,8 @@ def chatterbox_tts(
         cmd.extend(["--exaggeration", str(exaggeration)])
     if cfg_weight is not None:
         cmd.extend(["--cfg-weight", str(cfg_weight)])
+    if verbose:  # Added: Propagate
+        cmd.append("--verbose")
 
     # Quiet/robust env for the subprocess
     env = os.environ.copy()
@@ -489,35 +486,41 @@ def chatterbox_tts(
     try:
         result = subprocess.run(cmd, check=False, capture_output=True, text=True, env=env, timeout=timeout_sec)
     except subprocess.TimeoutExpired as e1:
-        # Fallback: retry with smaller/safer settings
+        # Fallback: retry with adaptive smaller/safer settings (text len-based)
+        text_len = max(1, len(text.strip()))
+        fallback_steps = max(6, min(20, int(0.3 * text_len)))  # Adaptive: ~0.3 steps/char, cap 20
+        fallback_tokens = max(16, min(64, int(0.5 * text_len)))
         fallback = list(cmd)
         if "--steps" in fallback:
             i = fallback.index("--steps")
             if i >= 0 and i + 1 < len(fallback):
-                fallback[i + 1] = "6"
+                fallback[i + 1] = str(fallback_steps)
         else:
-            fallback.extend(["--steps", "6"])
+            fallback.extend(["--steps", str(fallback_steps)])
         if "--max-new-tokens" in fallback:
             i = fallback.index("--max-new-tokens")
             if i >= 0 and i + 1 < len(fallback):
-                fallback[i + 1] = "16"
+                fallback[i + 1] = str(fallback_tokens)
         else:
-            fallback.extend(["--max-new-tokens", "16"])
+            fallback.extend(["--max-new-tokens", str(fallback_tokens)])
         try:
             result = subprocess.run(fallback, check=False, capture_output=True, text=True, env=env, timeout=max(90, timeout_sec // 2))
         except subprocess.TimeoutExpired as e2:
             raise PipelineError(f"Chatterbox CLI timed out: initial={timeout_sec}s, fallback={max(90, timeout_sec // 2)}s") from e2
     if result.returncode != 0:
         raise PipelineError(f"Chatterbox CLI failed: {result.stderr or result.stdout}")
-    # Parse JSON line to report whether the prompt was used
+    # Parse JSON line to report whether the prompt was used and check for fallback
     try:
         last_line = (result.stdout or "").strip().splitlines()[-1]
         meta = json.loads(last_line) if last_line else {}
         used = meta.get("used_prompt_arg")
         norm = meta.get("normalized_prompt_path")
+        note = meta.get("note")
         if used is not None:
-            print(f"[chatterbox] used_prompt_arg={used} normalized_prompt_path={norm}")
-    except Exception:
+            logging.info(f"[chatterbox] used_prompt_arg={used} normalized_prompt_path={norm}")
+        if note == "fallback_beep_audio" and not allow_fallback:  # Fixed: Detect and raise on beep
+            raise PipelineError(f"Chatterbox fell back to beep audio (note: {note}). Check CLI verbose output.")
+    except json.JSONDecodeError:
         # Non-fatal if CLI output wasn't JSON
         pass
 
@@ -549,62 +552,57 @@ def segment_audio_duration(path: Path) -> float:
         raise PipelineError(f"Unable to parse duration from ffprobe output: {result.stdout}") from exc
 
 
-def build_atempo_filter(speed: float) -> str:
-    """Construct a valid ffmpeg atempo filter string for an arbitrary speed multiplier."""
-
-    # The atempo filter only supports values in (0.5, 2.0], so we may need to chain filters.
-    filters: List[str] = []
-    remaining = speed
-    while remaining > 2.0:
-        filters.append("atempo=2.0")
-        remaining /= 2.0
-    while remaining < 0.5:
-        filters.append("atempo=0.5")
-        remaining *= 2.0
-    filters.append(f"atempo={remaining:.6f}")
-    return ",".join(filters)
-
-
 def stretch_segment(input_path: Path, output_path: Path, target_duration: float) -> None:
-    """Time-stretch an audio clip so that its duration matches the target duration."""
+    """Time-stretch an audio clip so that its duration matches the target duration using pydub."""
 
     current_duration = segment_audio_duration(input_path)
-    if current_duration == 0:
-        raise PipelineError(f"Segment {input_path} has zero duration; cannot stretch.")
+    if current_duration <= 0:
+        raise PipelineError(f"Segment {input_path} has zero/negative duration; cannot stretch.")
 
-    speed = current_duration / target_duration if target_duration else 1.0
-    filter_chain = build_atempo_filter(speed)
+    target_duration = max(0.1, target_duration)  # Min 100ms
+    speed = current_duration / target_duration
+    if speed == 1.0:
+        # No-op: copy
+        run_command(["cp", str(input_path), str(output_path)])
+        return
 
-    run_command(
-        [
-            "ffmpeg",
-            "-y",
-            "-i",
-            str(input_path),
-            "-filter:a",
-            filter_chain,
-            str(output_path),
-        ]
-    )
+    clip = AudioSegment.from_file(input_path)
+    # Use speedup (preserves pitch better than atempo)
+    stretched = speedup(clip, playback_speed=speed, chunk_size=150, crossfade=25)  # Tuned for naturalness
+    stretched.export(output_path, format="wav")
 
 
 def assemble_segments(segments: Iterable[GeneratedSegment], output_path: Path) -> None:
-    """Overlay the generated dialogue segments into a single audio track."""
+    """Overlay the generated dialogue segments into a single audio track with gap filling."""
 
     ordered = sorted(segments, key=lambda seg: seg.transcript.start)
     if not ordered:
         raise PipelineError("No generated segments provided for assembly.")
 
-    final_duration_ms = int(math.ceil(ordered[-1].transcript.end * 1000)) + 500
-    final_audio = AudioSegment.silent(duration=final_duration_ms)
+    # Compute total duration with padding
+    total_duration_ms = int(math.ceil(ordered[-1].transcript.end * 1000)) + 1000  # +1s tail
+    final_audio = AudioSegment.silent(duration=total_duration_ms)
 
+    prev_end_ms = 0
     for seg in ordered:
+        # Insert silence for gaps > 100ms
+        gap_start = prev_end_ms
+        gap_end = int(seg.transcript.start * 1000)
+        if gap_end - gap_start > 100:
+            silence = AudioSegment.silent(duration=gap_end - gap_start)
+            final_audio = final_audio.overlay(silence, position=gap_start)  # Explicit, though silent base
+
         clip = AudioSegment.from_file(seg.audio_path, format="wav")
         clip = clip.fade_in(50).fade_out(50)
         position_ms = int(seg.transcript.start * 1000)
         final_audio = final_audio.overlay(clip, position=position_ms)
+        prev_end_ms = max(prev_end_ms, position_ms + len(clip))
 
+    # Normalize with compression to avoid clipping
     final_audio = normalize(final_audio)
+    # Added: Light compression
+    from pydub.effects import compress_dynamic_range  # Assumes pydub 0.25+
+    final_audio = compress_dynamic_range(final_audio, threshold=-20.0, ratio=4.0, attack=5.0, release=50.0)
     final_audio.export(output_path, format="wav", bitrate="192k")
 
 
@@ -645,6 +643,8 @@ def generate_segments(
     language: Optional[str] = None,
     exaggeration: Optional[float] = None,
     cfg_weight: Optional[float] = None,
+    allow_fallback: bool = False,  # Added: Propagate
+    verbose: bool = False,  # Added: Propagate
 ) -> List[GeneratedSegment]:
     """Generate and time-stretch Chatterbox audio clips for each transcript segment."""
 
@@ -685,9 +685,10 @@ def generate_segments(
         raw_clip = workdir / f"segment_{index:04d}_raw.wav"
         stretched_clip = workdir / f"segment_{index:04d}_aligned.wav"
 
-        # Allow longer timeout for the very first synthesis (model download/init)
-        initial_timeout = int(os.environ.get("CHATTERBOX_INITIAL_TIMEOUT", "480"))
-        per_call_timeout = None if index > 0 else initial_timeout
+        # Adaptive timeout: longer for longer text/first call
+        text_len = max(1, len(segment.text.strip()))
+        base_timeout = int(os.environ.get("CHATTERBOX_TIMEOUT", "120"))
+        per_call_timeout = max(base_timeout, int(1.5 * text_len)) if index == 0 else base_timeout
 
         try:
             chatterbox_tts(
@@ -699,14 +700,19 @@ def generate_segments(
                 language=language,
                 exaggeration=exaggeration,
                 cfg_weight=cfg_weight,
+                allow_fallback=allow_fallback,
                 timeout_override=per_call_timeout,
+                verbose=verbose,
             )
         except PipelineError as exc:
-            # Fallback: synthesize a simple beep of target duration
-            try:
-                synthesize_beep(raw_clip, duration=segment.duration or 0.5)
-            except Exception as beep_exc:
-                raise PipelineError(f"Chatterbox failed and beep fallback also failed: {beep_exc}; original: {exc}") from exc
+            if allow_fallback:
+                logging.warning(f"Using beep fallback for segment {index}: {exc}")
+                try:
+                    synthesize_beep(raw_clip, duration=segment.duration or 0.5)
+                except Exception as beep_exc:
+                    raise PipelineError(f"Beep fallback failed: {beep_exc}; original: {exc}") from exc
+            else:
+                raise
 
         stretch_segment(raw_clip, stretched_clip, target_duration=segment.duration or 1e-3)
         generated.append(GeneratedSegment(transcript=segment, audio_path=stretched_clip))
@@ -805,6 +811,8 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     parser.add_argument("--language", help="Language id for multilingual model (e.g. en, fr, zh)")
     parser.add_argument("--exaggeration", type=float, default=None, help="Emotion/exaggeration control (0..1)")
     parser.add_argument("--cfg-weight", dest="cfg_weight", type=float, default=None, help="Guidance weight (0..1)")
+    parser.add_argument("--allow-fallback", action="store_true", help="Allow beep fallbacks (default: error on fallback)")  # Added
+    parser.add_argument("--verbose", action="store_true", help="Enable verbose logging in pipeline and CLI")  # Added
     parser.add_argument(
         "--keep-workdir",
         action="store_true",
@@ -819,22 +827,41 @@ def load_transcript_from_json(path: Path) -> List[TranscriptSegment]:
     except json.JSONDecodeError as exc:
         raise PipelineError(f"Failed to parse transcript JSON {path}: {exc}") from exc
 
+    if not isinstance(data, list):
+        raise PipelineError(f"Transcript JSON must be a list of segments: {path}")
+
     segments: List[TranscriptSegment] = []
-    for item in data:
+    for i, item in enumerate(data):
         try:
-            segments.append(
-                TranscriptSegment(start=float(item["start"]), end=float(item["end"]), text=str(item["text"]))
-            )
+            # Added: Validate keys/types
+            start = float(item.get("start", 0.0))
+            end = float(item.get("end", start))  # Default to start if missing
+            if end < start:
+                raise ValueError("end < start")
+            text = str(item.get("text", "")).strip()
+            if text:
+                segments.append(TranscriptSegment(start=start, end=end, text=text))
         except (KeyError, TypeError, ValueError) as exc:
-            raise PipelineError(f"Invalid transcript entry: {item}") from exc
+            raise PipelineError(f"Invalid transcript entry at index {i}: {item}") from exc
+
+    # Added: Check monotonicity
+    for i in range(1, len(segments)):
+        if segments[i].start < segments[i-1].end:
+            logging.warning(f"Overlapping segments at {i}: adjust manually if needed")
+
     return segments
 
 
 def main(argv: Optional[List[str]] = None) -> int:
     args = parse_args(argv)
 
+    # Setup logging
+    logging.basicConfig(level=logging.INFO if args.verbose else logging.WARNING, stream=sys.stderr, format="%(levelname)s: %(message)s")
+
     if not args.input_video.exists():
         raise PipelineError(f"Input video {args.input_video} does not exist.")
+    if not args.audio_prompt.exists():
+        raise PipelineError(f"Audio prompt {args.audio_prompt} does not exist.")
 
     with tempfile.TemporaryDirectory(prefix="voice-pipeline-") as tempdir_str:
         tempdir = Path(tempdir_str)
@@ -878,6 +905,8 @@ def main(argv: Optional[List[str]] = None) -> int:
             language=args.language,
             exaggeration=args.exaggeration,
             cfg_weight=args.cfg_weight,
+            allow_fallback=args.allow_fallback,
+            verbose=args.verbose,
         )
         print(f"Generated {len(generated_segments)} voice segments")
 
@@ -894,9 +923,9 @@ def main(argv: Optional[List[str]] = None) -> int:
             for item in tempdir.iterdir():
                 destination = preserved / item.name
                 if item.is_file():
-                    destination.write_bytes(item.read_bytes())
+                    shutil.copy2(str(item), str(destination))  # Fixed: Use shutil.copy2
                 elif item.is_dir():
-                    subprocess.run(["cp", "-R", str(item), str(destination)], check=False)
+                    shutil.copytree(str(item), str(destination), dirs_exist_ok=True)
             print(f"Working files preserved in {preserved}")
 
     return 0

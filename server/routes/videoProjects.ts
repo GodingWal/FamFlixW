@@ -581,6 +581,11 @@ router.post('/api/video-projects/:id/process', authenticateToken, async (req: Au
         }
         console.log('[processing] prompt wav path:', promptPath);
 
+        // Validate that the prompt path actually exists before spawning the pipeline
+        if (!(await fs.access(promptPath).then(() => true).catch(() => false))) {
+          throw new Error(`Voice prompt not found on disk: ${promptPath}`);
+        }
+
         // Determine output file location under uploads/videos
         const outputFileName = `processed-${id}.mp4`;
         const outputUrl = `/uploads/videos/${outputFileName}`;

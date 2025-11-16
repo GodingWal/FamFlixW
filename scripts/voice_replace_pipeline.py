@@ -89,6 +89,7 @@ def run_command(command: List[str], *, cwd: Optional[Path] = None) -> None:
 def extract_audio(input_video: Path, audio_output: Path) -> None:
     """Extract the primary audio track from a video file using ffmpeg."""
 
+    print(f"[pipeline] Extracting audio from {input_video} -> {audio_output}")
     run_command(
         [
             "ffmpeg",
@@ -144,6 +145,7 @@ def transcribe_with_openai_whisper(
             " or use --transcriber faster-whisper (recommended)."
         ) from exc
 
+    print(f"[pipeline] Transcribing with openai-whisper model={model_name} device={device or 'auto'}")
     model = whisper.load_model(model_name, device=device)
     result = model.transcribe(
         str(audio_path),
@@ -186,6 +188,7 @@ def transcribe_with_faster_whisper(
     ct2_device = "cuda" if dev.startswith("cuda") else "cpu"
     ct2_compute = compute_type or ("float16" if ct2_device == "cuda" else "int8")
 
+    print(f"[pipeline] Transcribing with faster-whisper model={model_name} device={ct2_device} compute={ct2_compute}")
     model = WhisperModel(model_name, device=ct2_device, compute_type=ct2_compute)
     segments_iter, _info = model.transcribe(
         str(audio_path),
@@ -333,6 +336,7 @@ def transcribe_audio(
     """Transcribe an audio file using the selected backend and return time-aligned segments."""
 
     backend = (transcriber or "auto").lower()
+    print(f"[pipeline] Starting transcription via {backend} (whisper_model={model_name}, device={device or ct2_device or 'auto'})")
     if backend in ("faster-whisper", "faster_whisper"):
         return transcribe_with_faster_whisper(
             audio_path,
@@ -682,6 +686,7 @@ def generate_segments(
 
     generated: List[GeneratedSegment] = []
     for index, segment in enumerate(all_segments):
+        print(f"[pipeline] Synthesizing segment {index + 1}/{len(all_segments)}: '{segment.text[:40]}' duration={segment.duration:.2f}s")
         raw_clip = workdir / f"segment_{index:04d}_raw.wav"
         stretched_clip = workdir / f"segment_{index:04d}_aligned.wav"
 

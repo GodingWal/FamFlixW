@@ -30,6 +30,4 @@ if (isSQLite) {
   db = drizzle(pool, { schema: pgSchema });
 }
 
-export { db };
-
-export { pool };
+export { db, pool, sqliteDb };

@@ -1,12 +1,24 @@
 import { beforeAll, afterAll, beforeEach, afterEach, vi } from 'vitest';
 
-// Mock environment variables for testing
-process.env.NODE_ENV = process.env.NODE_ENV || 'test';
-process.env.DATABASE_URL = process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/famflix_test';
-process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-jwt-secret-key-for-testing-only';
-process.env.JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || 'test-jwt-refresh-secret-key-for-testing-only';
-process.env.SESSION_SECRET = process.env.SESSION_SECRET || 'test-session-secret-key-for-testing-only';
-process.env.REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379/1'; // Use database 1 for tests
+// Mock environment variables for testing first
+process.env.NODE_ENV = 'test';
+process.env.DATABASE_URL = 'file::memory:';
+process.env.JWT_SECRET = 'test-jwt-secret-key-for-testing-only';
+process.env.JWT_REFRESH_SECRET = 'test-jwt-refresh-secret-key-for-testing-only';
+process.env.SESSION_SECRET = 'test-session-secret-key-for-testing-only';
+process.env.REDIS_URL = 'redis://localhost:6379/1'; // Use database 1 for tests
+
+// Mock ioredis
+vi.mock('ioredis', () => {
+  const Redis = vi.fn(() => ({
+    get: vi.fn(),
+    set: vi.fn(),
+    del: vi.fn(),
+    disconnect: vi.fn(),
+    quit: vi.fn(),
+  }));
+  return { default: Redis };
+});
 
 // Global test setup
 beforeAll(async () => {
@@ -17,6 +29,10 @@ beforeAll(async () => {
 afterAll(async () => {
   // Cleanup test database
   console.log('Cleaning up test environment...');
+  const { sqliteDb } = await import('../server/db');
+  if (sqliteDb) {
+    sqliteDb.close();
+  }
 });
 
 beforeEach(async () => {
